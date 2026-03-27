@@ -16,5 +16,12 @@ obj/
 appsettings.Development.json
 WattWatch.http
 
+#Secrets
+.env
+
+#Docker volumes / local data
+postgres_data/
+grafana_data/
+
 # End of https://www.toptal.com/developers/gitignore/api/dotnetcore
 
