@@ -6,6 +6,7 @@ namespace Database;
 public class AppDbContext : DbContext
 {
   public DbSet<DeviceReading> Readings { get; set; }
+  public DbSet<EnergyConsumption> EnergyConsumptions { get; set; }
 
   public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
   {
