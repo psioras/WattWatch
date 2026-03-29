@@ -29,7 +29,7 @@ public static class WattageEndpoints
     try
     {
       Console.WriteLine($"Adding wattage reading for device {reading.DeviceId} with wattage {reading.Wattage}");
-      db.Readings.Add(reading);
+      db.ElectricityReadings.Add(reading);
       await db.SaveChangesAsync();
       return Results.Created("/wattage", reading);
     }
@@ -52,7 +52,7 @@ public static class WattageEndpoints
     try
     {
       Console.WriteLine($"Getting wattage reading for device {DeviceId}");
-      var reading = await db.Readings.Where(r => r.DeviceId == DeviceId).OrderByDescending(r => r.Timestamp).FirstOrDefaultAsync();
+      var reading = await db.ElectricityReadings.Where(r => r.DeviceId == DeviceId).OrderByDescending(r => r.Timestamp).FirstOrDefaultAsync();
       if (reading == null)
       {
         return Results.NotFound($"No wattage reading found for device {DeviceId}");

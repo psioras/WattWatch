@@ -26,7 +26,7 @@ namespace Services
     {
       try
       {
-        var deviceIds = await _context.Readings
+        var deviceIds = await _context.ElectricityReadings
           .Select(r => r.DeviceId)
           .Distinct()
           .ToListAsync();
@@ -70,7 +70,7 @@ namespace Services
     // This helper method calculates energy consumption in kWh for a given device and time period
     public async Task<double> CalculateEnergyConsumption(string deviceId, DateTime periodStart, DateTime periodEnd)
     {
-      var readings = await _context.Readings
+      var readings = await _context.ElectricityReadings
         .Where(r => r.DeviceId == deviceId && r.Timestamp >= periodStart && r.Timestamp <= periodEnd)
         .OrderBy(r => r.Timestamp)
         .ToListAsync();
