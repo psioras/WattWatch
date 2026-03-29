@@ -6,6 +6,7 @@ using Serilog;
 using Services;
 using Jobs;
 using NCronJob;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +21,12 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<CalculationsService>();
+
+// Ignore circular references caused by bidirectional navigation properties
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+  options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+});
 
 var athensZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Athens");
 builder.Services.AddNCronJob(options => options

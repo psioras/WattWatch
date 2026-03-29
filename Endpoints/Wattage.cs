@@ -28,10 +28,19 @@ public static class WattageEndpoints
   {
     try
     {
+      var device = await db.Devices.AsNoTracking().FirstOrDefaultAsync(d => d.DeviceId == reading.DeviceId);
+      if (device == null)
+      {
+        Console.WriteLine($"Rejected reading: device '{reading.DeviceId}' is not registered in the Devices table.");
+        return Results.BadRequest($"Device '{reading.DeviceId}' is not registered. Register it first via POST /devices.");
+      }
+
+      reading.DeviceTableId = device.Id;
+
       Console.WriteLine($"Adding wattage reading for device {reading.DeviceId} with wattage {reading.Wattage}");
       db.ElectricityReadings.Add(reading);
       await db.SaveChangesAsync();
-      return Results.Created("/wattage", reading);
+      return Results.Created($"/wattage/{reading.DeviceId}", new { reading.Id, reading.DeviceId, reading.Wattage, reading.Timestamp });
     }
     catch (Exception ex)
     {
