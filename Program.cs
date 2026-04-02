@@ -45,12 +45,14 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 var athensZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Athens");
 builder.Services.AddNCronJob(options => options
+    .AddJob<LiveEnergyJob>(cron => cron
+        .WithCronExpression("*/1 * * * *", athensZone)) // Every 5 minutes Athens time
     .AddJob<DailyEnergyJob>(cron => cron
         .WithCronExpression("0 0 * * *", athensZone)) // Every day at midnight Athens time
-    .AddJob<WeeklyEnergyJob>(cron => cron
-        .WithCronExpression("0 0 * * 1", athensZone)) // Every Monday at midnight Athens time
     .AddJob<MonthlyEnergyJob>(cron => cron
-        .WithCronExpression("0 0 1 * *", athensZone))); // Every 1st day of the month at midnight Athens time
+        .WithCronExpression("0 0 1 * *", athensZone)) // Every 1st day of the month at midnight Athens 23:47
+    .AddJob<YearlyEnergyJob>(cron => cron
+        .WithCronExpression("0 0 1 1 *", athensZone))); // Every January 1st at midnight Athens time
 
 var app = builder.Build();
 
@@ -63,9 +65,12 @@ if (app.Environment.IsDevelopment())
     options.RoutePrefix = string.Empty;
   });
 }
+
 app.UseMiddleware<ApiKeyMiddleware>();
 app.MapWattageEndpoints();
 app.MapDeviceEndpoints();
 app.MapLocationEndpoints();
+app.MapLiveEndpoints();
+app.MapJobEndPoints();
 
 app.Run();

@@ -15,72 +15,124 @@ public class CalculationsService
     _logger = logger;
   }
 
-  //<summary>
-  // This method runs the energy consumption calculations for all devices over a specified time period and saves
-  // the results to the database.
-  // periodType: A string indicating the type of period (e.g., "Daily", "Weekly", "Monthly").
-  // periodStart: The start date and time of the period for which to calculate energy consumption
-  // periodEnd: The end date and time of the period for which to calculate energy consumption
-  //</summary>
-  public async Task RunCalculationsAsync(string periodType, DateTime periodStart, DateTime periodEnd)
+  // This method calculates energy consumption and cost for a given device and time period, then saves the results to the LiveConsumption table.
+  public async Task UpdateLiveConsumptionAsync()
   {
-    try
+    var devices = await _context.Devices.AsNoTracking().ToListAsync();
+
+    var AthensZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Athens");
+    var nowUtc = DateTime.UtcNow;
+    var nowInAthens = TimeZoneInfo.ConvertTimeFromUtc(nowUtc, AthensZone);
+
+    // Time calculations. We need to convert the periodStart and periodEnd from UTC to Athens time to determine if they fall within the current day or month in Athens time, which is what we want to display in the LiveConsumption table.
+    var midnightAthens = nowInAthens.Date; // Start of the current day in Athens time.
+    var startOfMonthAthens = new DateTime(nowInAthens.Year, nowInAthens.Month, 1); // Start of the current month in Athens time.
+    var startOfYearAthens = new DateTime(nowInAthens.Year, 1, 1); // Start of the current year in Athens time.
+    var allTimeStart = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc); // Arbitrary early date to represent "all time". Hardcoded to save a SQL query to get the earliest reading timestamp.
+    var midnightUtc = TimeZoneInfo.ConvertTimeToUtc(midnightAthens, AthensZone);
+    var startOfMonthUtc = TimeZoneInfo.ConvertTimeToUtc(startOfMonthAthens, AthensZone);
+    var startOfYearUtc = TimeZoneInfo.ConvertTimeToUtc(startOfYearAthens, AthensZone);
+
+    foreach (var device in devices)
     {
-      var deviceIds = await _context.ElectricityReadings
-        .Select(r => r.DeviceId)
-        .Distinct()
-        .ToListAsync();
+      // Calculate energy consumption and cost for today, this month, and all time.
+      //
+      var kWhToday = await CalculateEnergyConsumption(device.DeviceId, midnightUtc, nowUtc);
+      var costToday = await CalculateCostAsync(device.LocationId, kWhToday, nowUtc);
+      var kWhCurrentMonth = await CalculateEnergyConsumption(device.DeviceId, startOfMonthUtc, nowUtc);
+      var costCurrentMonth = await CalculateCostAsync(device.LocationId, kWhCurrentMonth, nowUtc);
+      var kWhCurrentYear = await CalculateEnergyConsumption(device.DeviceId, startOfYearUtc, nowUtc);
+      var costCurrentYear = await CalculateCostAsync(device.LocationId, kWhCurrentYear, nowUtc);
+      var kWhAllTime = await CalculateEnergyConsumption(device.DeviceId, allTimeStart, nowUtc);
+      var costAllTime = await CalculateCostAsync(device.LocationId, kWhAllTime, nowUtc);
 
-      if (!deviceIds.Any())
+      var liveConsumption = new LiveConsumption
       {
-        _logger.LogInformation("No devices found for calculations.");
-        return;
-      }
-
-      foreach (var deviceId in deviceIds)
+        DeviceTableId = device.Id,
+        LocationId = device.LocationId,
+        kWhToday = kWhToday,
+        CostToday = costToday,
+        kWhCurrentMonth = kWhCurrentMonth,
+        CostCurrentMonth = costCurrentMonth,
+        kWhCurrentYear = kWhCurrentYear,
+        CostCurrentYear = costCurrentYear,
+        kWhAllTime = kWhAllTime,
+        CostAllTime = costAllTime
+      };
+      var existingRecord = await _context.LiveConsumptions.FirstOrDefaultAsync(lc => lc.DeviceTableId == device.Id);
+      if (existingRecord == null)
       {
-        var device = await _context.Devices.AsNoTracking().FirstOrDefaultAsync(d => d.DeviceId == deviceId);
-
-        if (device == null)
-        {
-          _logger.LogWarning($"Device '{deviceId}' found in ElectricityReadings but not registered in Devices table. Skipping.");
-          continue;
-        }
-
-        var kWh = await CalculateEnergyConsumption(deviceId, periodStart, periodEnd);
-
-        if (kWh == 0)
-        {
-          _logger.LogInformation($"No energy consumption calculated for device {deviceId} during the period {periodStart} to {periodEnd}.");
-          continue;
-        }
-
-        var cost = await CalculateCostAsync(device.LocationId, kWh, periodEnd);
-
-        var record = new EnergyConsumption
-        {
-          DeviceId = deviceId,
-          DeviceTableId = device.Id,
-          LocationId = device.LocationId,
-          PeriodStart = periodStart,
-          PeriodEnd = periodEnd,
-          kWhConsumption = kWh,
-          CostEuros = cost,
-          PeriodType = periodType
-        };
-
-        _context.EnergyConsumptions.Add(record);
+        _logger.LogInformation($"Created the first live consumption record for device {device.DeviceId}.");
+        _context.LiveConsumptions.Add(liveConsumption);
       }
-      await _context.SaveChangesAsync();
+      else
+      {
+        existingRecord.kWhToday = kWhToday;
+        existingRecord.CostToday = costToday;
+        existingRecord.kWhCurrentMonth = kWhCurrentMonth;
+        existingRecord.CostCurrentMonth = costCurrentMonth;
+        existingRecord.kWhCurrentYear = kWhCurrentYear;
+        existingRecord.CostCurrentYear = costCurrentYear;
+        existingRecord.kWhAllTime = kWhAllTime;
+        existingRecord.CostAllTime = costAllTime;
+        existingRecord.LastUpdated = DateTime.UtcNow;
+
+        _logger.LogInformation($"Updated live consumption record for device {device.DeviceId}.");
+      }
     }
-    catch (Exception ex)
+    await _context.SaveChangesAsync();
+  }
+
+  // This heper method takes data from database LiveConsumption table and moves them over to EnergyConsumption table, to save Daily and Monthly energy consumption results.
+  public async Task TransferLiveToEnergyConsumptionAsync(string periodType)
+  {
+    await UpdateLiveConsumptionAsync(); // Ensure LiveConsumption is up to date before transferring data
+
+    var liveConsumptions = await _context.LiveConsumptions
+      .Include(lc => lc.Device)
+      .ToListAsync();
+
+    var AthensZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Athens");
+    var nowinAthens = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, AthensZone);
+
+    var periodEndAthens = nowinAthens.Date; // Start of the current day in Athens
+    DateTime periodStartAthens = periodType switch
     {
-      _logger.LogError($"Error during calculations: {ex.Message}");
+      "Daily" => periodEndAthens.AddDays(-1), // Start of the previous day in Athens
+      "Monthly" => periodEndAthens.AddMonths(-1), // Start of the previous month in Athens
+      "Yearly" => periodEndAthens.AddYears(-1), // Start of the previous year in Athens
+      _ => throw new ArgumentException("Invalid period type. Must be 'Daily' or 'Monthly' or 'Yearly'.")
+    };
+    DateTime periodStartUtc = TimeZoneInfo.ConvertTimeToUtc(periodStartAthens, AthensZone);
+    DateTime periodEndUtc = TimeZoneInfo.ConvertTimeToUtc(periodEndAthens, AthensZone);
+
+    foreach (var lc in liveConsumptions)
+    {
+      var kWh = periodType == "Daily" ? lc.kWhToday
+        : periodType == "Monthly" ? lc.kWhCurrentMonth
+        : lc.kWhCurrentYear;
+      var cost = periodType == "Daily" ? lc.CostToday
+        : periodType == "Monthly" ? lc.CostCurrentMonth
+        : lc.CostCurrentYear;
+
+      var energyConsumption = new EnergyConsumption
+      {
+        DeviceId = lc.Device.DeviceId,
+        DeviceTableId = lc.DeviceTableId,
+        LocationId = lc.LocationId,
+        PeriodStart = periodStartUtc,
+        PeriodEnd = periodEndUtc,
+        kWhConsumption = kWh,
+        CostEuros = cost,
+        PeriodType = periodType
+      };
+      _context.EnergyConsumptions.Add(energyConsumption);
     }
+    await _context.SaveChangesAsync();
   }
 
   // This helper method calculates energy consumption in kWh for a given device and time period
-  public async Task<double> CalculateEnergyConsumption(string deviceId, DateTime periodStart, DateTime periodEnd)
+  private async Task<double> CalculateEnergyConsumption(string deviceId, DateTime periodStart, DateTime periodEnd)
   {
     var readings = await _context.ElectricityReadings
       .Where(r => r.DeviceId == deviceId && r.Timestamp >= periodStart && r.Timestamp <= periodEnd)

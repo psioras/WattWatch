@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
   public DbSet<Location> Locations { get; set; }
   public DbSet<LocationPrice> LocationPrices { get; set; }
   public DbSet<Device> Devices { get; set; }
+  public DbSet<LiveConsumption> LiveConsumptions { get; set; }
 
   public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
   {
@@ -88,5 +89,24 @@ public class AppDbContext : DbContext
       .WithMany(l => l.Prices)
       .HasForeignKey(lp => lp.LocationId)
       .OnDelete(DeleteBehavior.Restrict);
+
+    // FK: LiveConsumptions.DeviceTableId → Devices.Id
+    modelBuilder.Entity<LiveConsumption>()
+      .HasOne(lc => lc.Device)
+      .WithOne()
+      .HasForeignKey<LiveConsumption>(lc => lc.DeviceTableId)
+      .OnDelete(DeleteBehavior.Restrict);
+
+    // FK: LiveConsumptions.LocationId → Locations.Id
+    modelBuilder.Entity<LiveConsumption>()
+      .HasOne(lc => lc.Location)
+      .WithMany()
+      .HasForeignKey(lc => lc.LocationId)
+      .OnDelete(DeleteBehavior.Restrict);
+
+    // Unique index on DeviceTableId to ensure one live consumption record per device
+    modelBuilder.Entity<LiveConsumption>()
+      .HasIndex(lc => lc.DeviceTableId)
+      .IsUnique();
   }
 }

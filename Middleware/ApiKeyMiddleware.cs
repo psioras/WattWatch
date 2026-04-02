@@ -21,7 +21,7 @@ public class ApiKeyMiddleware
 
     var expectedApiKey = configuration.GetValue<string>("ApiKeySettings:ApiKey");
 
-    if (!expectedApiKey.Equals(extractedApiKey))
+    if (expectedApiKey != extractedApiKey)
     {
       context.Response.StatusCode = 401; //Unauthorized
       await context.Response.WriteAsync("Unauthorized client.");
