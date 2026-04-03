@@ -86,7 +86,7 @@ public class CalculationsService
   // This heper method takes data from database LiveConsumption table and moves them over to EnergyConsumption table, to save Daily and Monthly energy consumption results.
   public async Task TransferLiveToEnergyConsumptionAsync(string periodType)
   {
-    await UpdateLiveConsumptionAsync(); // Ensure LiveConsumption is up to date before transferring data
+    //Removed a call on UpdateLiveConsumptionAsync() to avoid calculating when cron calls at 00:00:00 (which triggers to update the data to 0 for kWh consumption Daily + Cost Daily. 
 
     var liveConsumptions = await _context.LiveConsumptions
       .Include(lc => lc.Device)
